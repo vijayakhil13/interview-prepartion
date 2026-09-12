@@ -180,6 +180,29 @@ Outage Occurs: us-east-1 suffers a major infrastructure or regional failure.
 Health Check Fails: Route 53 Health Check fails 3 consecutive times (typically within 30 seconds).
 
 DNS Failover Executed: Route 53 automatically stops returning the IP address of us-east-1 in DNS lookup queries and begins returning the IP address of the secondary ingress in us-west-2.
+When a user types your URL (e.g., api.company.com) into a browser, their computer doesn't know which IP address that domain belongs to. It has to ask a DNS Server (like AWS Route 53) to translate that domain name into a numeric IP address.
+
+To save time and prevent asking Route 53 every single second, the user's browser, computer, and Internet Service Provider (ISP) save (cache) that IP address locally for a set amount of time.
+
+That saved duration is controlled by the TTL (Time to Live).
+
+The Problem with High TTL During an Outage
+Imagine your primary region (us-east-1) IP is 1.1.1.1 and your TTL is set to 24 hours (86,400 seconds):
+
+Normal State: A user visits your app. Their browser asks Route 53, gets 1.1.1.1, and remembers: "Send all traffic for api.company.com to 1.1.1.1 for the next 24 hours."
+
+Outage Occurs: us-east-1 goes down. Route 53 detects the failure within 30 seconds and changes the domain's record to point to your DR region (us-west-2) at 2.2.2.2.
+
+The Cache Trap: Even though Route 53 updated its records in 30 seconds, your user's browser is still using the saved 1.1.1.1 IP address because their 24-hour TTL timer hasn't expired!
+
+Result: The user experiences an outage for hours until their local cache expires and requests a fresh IP from Route 53.
+
+Why "Low TTL Enforcement" Solves This
+By setting your DNS record's TTL to 60 seconds or lower (e.g., 10–60 seconds):
+
+You force browsers, operating systems, and ISPs to discard their saved IP address every 60 seconds and ask Route 53 for a fresh lookup.
+
+During a Failover: When Route 53 switches traffic from us-east-1 (1.1.1.1) to us-west-2 (2.2.2.2), clients will pick up the new, healthy IP address within 60 seconds or less, minimizing downtime for live users.
 
 Low TTL Enforcement: To prevent client-side DNS caching from delaying failover, set the DNS record TTL (Time to Live) to 60 seconds or lower.
 
