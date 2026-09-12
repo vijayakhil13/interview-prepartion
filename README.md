@@ -159,3 +159,31 @@ How it Works: Enable S3 Cross-Region Replication (CRR) on the source bucket. CRR
 Sub-1-Minute RPO Guarantee (S3 RTC): Standard CRR replicates objects asynchronously, usually within a few minutes. To strictly enforce your sub-1-minute RPO SLA, enable S3 Replication Time Control (S3 RTC).
 
 S3 RTC SLA: AWS guarantees that 99.9% of objects are replicated within 15 minutes (and typically within seconds for standard file sizes), backed by a Service Level Agreement (SLA) and CloudWatch metrics (ReplicationLatency) to monitor RPO drift in real-time.
+
+Question:-How do you configure AWS Route 53 (Health Checks, Routing Policies like Failover vs. Geolocation) to automatically or semi-automatically shift live user traffic from us-east-1 to us-west-2 during a regional outage?
+How AWS Route 53 Failover Works Under the Hood
+1. Route 53 Failover Routing Policy
+You create a Failover Routing Policy in Route 53 for your domain (e.g., api.yourcompany.com):
+
+Primary Record: Points to the ALB / Ingress Controller IP in us-east-1.
+
+Secondary Record: Points to the ALB / Ingress Controller IP in us-west-2.
+
+2. Route 53 Health Checks
+You configure a Route 53 Health Check that monitors an endpoint on your primary region (e.g., [https://api-us-east-1.yourcompany.com/healthz](https://api-us-east-1.yourcompany.com/healthz)).
+
+In-Flight Validation: The health check probes your application's /healthz route (which checks database connectivity, core pod health, and ingress responsiveness).
+
+3. The Automatic Failover Sequence
+Outage Occurs: us-east-1 suffers a major infrastructure or regional failure.
+
+Health Check Fails: Route 53 Health Check fails 3 consecutive times (typically within 30 seconds).
+
+DNS Failover Executed: Route 53 automatically stops returning the IP address of us-east-1 in DNS lookup queries and begins returning the IP address of the secondary ingress in us-west-2.
+
+Low TTL Enforcement: To prevent client-side DNS caching from delaying failover, set the DNS record TTL (Time to Live) to 60 seconds or lower.
+
+Pro Tip for Senior Interviews: Route 53 ARC (Application Recovery Controller)
+To sound like an enterprise architect, mention Route 53 Application Recovery Controller (ARC) Routing Controls:
+
+"For critical financial systems, fully automated DNS failovers can sometimes trigger false positives if a simple health check flap occurs. To prevent split-brain scenarios, we use Route 53 Application Recovery Controller (ARC) Routing Controls. ARC uses manual or automated safety-check rules (routing control switches) to safely execute cross-region traffic shifting without relying solely on simple HTTP health checks."
