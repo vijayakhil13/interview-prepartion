@@ -133,3 +133,29 @@ The AWS SDK / Secrets Store CSI Driver sends the JWT token to AWS STS via Assume
 STS validates the token against the OIDC provider and issues short-lived AWS credentials.
 
 Secrets Store CSI Driver Integration: The CSI driver uses these temporary STS credentials to fetch secrets from AWS Secrets Manager and mounts them as an ephemeral, in-memory tmpfs volume inside the Pod container.
+
+
+Question: Multi-Region Disaster Recovery (RTO/RPO & Active-Passive Architecture)
+You are designing the disaster recovery strategy for a mission-critical financial API running on AWS (EKS, Aurora PostgreSQL, and S3). The business requires an RPO (Recovery Point Objective) < 1 minute and an RTO (Recovery Time Objective) < 15 minutes.
+
+Database & Storage Layer: How do you configure AWS Aurora PostgreSQL and Amazon S3 across a primary region (e.g., us-east-1) and a secondary DR region (e.g., us-west-2) to meet the sub-1-minute RPO?
+
+
+1. AWS Aurora PostgreSQL: Use Aurora Global Database
+Instead of setting up manual standby PostgreSQL instances or logical replication (which adds overhead), use Amazon Aurora Global Database:
+
+How it Works:
+Instead of saying generic "cross-region replication for Aurora," specifically name Amazon Aurora Global Database. Standard RDS uses logical replication (which is slower), whereas Aurora Global Database uses dedicated physical storage-level replication across AWS regions to keep latency under 1 second.
+
+RPO Metrics: Cross-region replication latency is typically under 1 second, easily satisfying your sub-1-minute RPO requirement.
+
+Failover Mechanics: If us-east-1 experiences a catastrophic outage, you can promote the us-west-2 secondary cluster to read-write mode in less than 1 minute (unplanned failover), with zero data loss for committed transactions.
+
+2. Amazon S3: Use S3 Cross-Region Replication (CRR)
+To replicate object storage (logs, media, assets, backups) from us-east-1 to us-west-2:
+
+How it Works: Enable S3 Cross-Region Replication (CRR) on the source bucket. CRR requires S3 Versioning to be enabled on both source and destination buckets.
+
+Sub-1-Minute RPO Guarantee (S3 RTC): Standard CRR replicates objects asynchronously, usually within a few minutes. To strictly enforce your sub-1-minute RPO SLA, enable S3 Replication Time Control (S3 RTC).
+
+S3 RTC SLA: AWS guarantees that 99.9% of objects are replicated within 15 minutes (and typically within seconds for standard file sizes), backed by a Service Level Agreement (SLA) and CloudWatch metrics (ReplicationLatency) to monitor RPO drift in real-time.
