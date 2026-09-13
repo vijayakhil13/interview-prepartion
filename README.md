@@ -207,7 +207,66 @@ During a Failover: When Route 53 switches traffic from us-east-1 (1.1.1.1) to us
 Low TTL Enforcement: To prevent client-side DNS caching from delaying failover, set the DNS record TTL (Time to Live) to 60 seconds or lower.
 Step 1: Create the Route 53 Health CheckBefore creating DNS records, you create a Route 53 Health Check that monitors your primary region (us-east-1).Go to Route 53 Console $\rightarrow$ Health Checks $\rightarrow$ Click Create Health Check.What to Monitor: Select Endpoint.Specify Endpoint by: Choose Domain Name or IP Address.Domain Name: Enter your primary region's specific ALB domain (e.g., primary-alb.us-east-1.elb.amazonaws.com).Path: Enter your application's health endpoint (e.g., /healthz or /api/health).Health Checker Settings:Request Interval: Set to Standard (30 seconds) or Fast (10 seconds).Failure Threshold: Set to 3 (this means if 3 consecutive checks fail, the region is marked unhealthy).Click Create Health Check. Route 53 will generate a Health Check ID.Step 2: Register Primary and Secondary Records in your Hosted ZoneGo to your Route 53 Hosted Zone (e.g., yourcompany.com) and create two records for your main application domain (e.g., api.yourcompany.com).Record A: Primary Region (us-east-1)Record Name: api.yourcompany.comRecord Type: A or AAAA (Alias to AWS ALB/CloudFront)Routing Policy: Select FailoverFailover Record Type: Select PrimaryTTL: Set to 60 seconds (or less)Value / Route traffic to: Select the us-east-1 Application Load BalancerAssociate with Health Check: Select Yes, and choose the Health Check ID created in Step 1.Record B: Secondary DR Region (us-west-2)Record Name: api.yourcompany.com (exact same domain name!)Record Type: A or AAAA (Alias to AWS ALB/CloudFront)Routing Policy: Select FailoverFailover Record Type: Select SecondaryTTL: Set to 60 seconds (or less)Value / Route traffic to: Select the us-west-2 Application Load BalancerAssociate with Health Check: Select No (the secondary record doesn't need its own health check—it acts as the fallback target when the primary fails).
 
+
+Question:-Suppose you need to modify a critical database table (e.g., renaming a column from user_phone to phone_number or splitting a full_name column into first_name and last_name) while the application processes thousands of HTTP requests per second.
+
+The Migration Pattern: How do you execute this schema change using the Expand-Contract (Parallel Run) migration pattern across multiple deployment steps to ensure zero application downtime and zero dropped SQL queries?
+
+Application & Stateful Rollbacks: How do you handle backward compatibility so that older application pods (running v1) and new application pods (running v2) can safely co-exist during a rolling update without throwing database runtime errors?
+
+CI/CD Integration: Where and how do you execute database migration scripts (e.g., Flyway, Liquibase, or ORM tools) within your Kubernetes deployment pipeline (e.g., ArgoCD PreSync hooks, Helm tests, or InitContainers) to prevent race conditions during scaling?
+
+
 Pro Tip for Senior Interviews: Route 53 ARC (Application Recovery Controller)
 To sound like an enterprise architect, mention Route 53 Application Recovery Controller (ARC) Routing Controls:
 
 "For critical financial systems, fully automated DNS failovers can sometimes trigger false positives if a simple health check flap occurs. To prevent split-brain scenarios, we use Route 53 Application Recovery Controller (ARC) Routing Controls. ARC uses manual or automated safety-check rules (routing control switches) to safely execute cross-region traffic shifting without relying solely on simple HTTP health checks."
+Answer:- 1. The Expand-Contract Pattern (Step-by-Step)
+Instead of breaking the table in a single step, break the change into 4 distinct deployment steps:
+
+Step 1: Expand (Add New Column without deleting Old)
+Database Action: Execute a migration script to ADD COLUMN phone_number. Keep the old user_phone column intact.
+
+App State: v1 Pods continue reading and writing to user_phone.
+
+Step 2: Dual-Writing (Support Both Columns)
+Database Action: Add a database Trigger or application-level logic to automatically sync any write to user_phone into phone_number (and vice-versa).
+
+Backfill: Run a background data migration job to copy historical data from user_phone to phone_number for existing rows.
+
+Step 3: Transition (Deploy New App Code)
+App State: Deploy v2 Pods. v2 code is updated to read from and write to phone_number.
+
+Compatibility: Because user_phone still exists and updates via dual-writing, both v1 and v2 Pods co-exist cleanly during the rolling update without throwing SQL exceptions.
+
+Step 4: Contract (Cleanup & Remove Old Column)
+Verification: Confirm all v1 Pods are completely terminated and 100% of traffic is on v2.
+
+Database Action: Remove the triggers and issue ALTER TABLE DROP COLUMN user_phone.
+
+2. CI/CD Integration & ArgoCD Manifest Execution
+To execute migration scripts automatically without race conditions, do not run migrations inside container InitContainers (since scaling to 10 replicas would trigger 10 parallel migration jobs against the DB simultaneously).
+
+Instead, use ArgoCD PreSync Hooks or K8s Helm Pre-install Hooks:
+
+YAML
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migration-step-1
+  annotations:
+    argocd.argoproj.io/hook: PreSync          # Runs BEFORE the rolling update starts
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  template:
+    spec:
+      containers:
+      - name: flyway-migration
+        image: flyway/flyway:latest
+        command: ["flyway", "migrate"]
+      restartPolicy: Never
+PreSync Hook Runs: ArgoCD spawns a single Kubernetes Job executing Flyway/Liquibase migration scripts (e.g., Step 1: Add new column).
+
+Validation: The main deployment pauses until the migration Job exits with Code 0.
+
+Rollout Initiates: Once the database schema is safely expanded, ArgoCD proceeds with the rolling update of new Application Pods.
