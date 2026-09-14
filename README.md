@@ -309,3 +309,4 @@ IAM Role Trust Policy: You create a single IAM Role per service (e.g., app-s3-re
 ServiceAccount Parity: The Kubernetes ServiceAccount YAML (deployed via ArgoCD to both clusters) uses the exact same [eks.amazonaws.com/role-arn](https://eks.amazonaws.com/role-arn) annotation.
 
 Seamless Authentication: Whether a pod spins up in us-east-1 or us-west-2, it exchanges its local cluster-specific OIDC token for temporary AWS STS credentials via AssumeRoleWithWebIdentity without any code changes.
+Amazon Aurora: This is AWS's premium, cloud-native database engine built specifically for the cloud. It is fully compatible with MySQL and PostgreSQL, but it decouples compute from storage. It replicates your data 6 times across 3 Availability Zones automatically, heals itself, scales storage dynamically, and offers up to 5x the performance of standard RDS.
